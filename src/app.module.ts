@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { TasksModule } from './tasks/tasks.module';
 import { AuthModule } from './auth/auth.module';
 import { AiService } from './ai/ai.service';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AiService } from './ai/ai.service';
     TasksModule,
 
     AuthModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService, AiService],

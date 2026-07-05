@@ -1,13 +1,12 @@
-import { Controller, Post, Body, Get, Param, Patch, Delete, HttpCode, HttpStatus, Query, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Patch, Delete, HttpCode, HttpStatus, Query, UseGuards, ParseArrayPipe } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
-import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiResponse, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { User } from 'src/auth/entities/auth.entity';
-import { GetUser } from 'src/auth/get-user.decorator';
-import { UpdateTaskDescriptionDto } from './dto/update-task-description.dto';
+import { GetUser } from 'src/auth/decorators/get-user.decorator';
 import { GetTaskFilterDto } from './dto/get-tasks-filter.dto';
+import { UpdateTaskDto } from './dto/update-task.dto';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
@@ -32,22 +31,16 @@ export class TasksController {
     return this.tasksService.findOne(id, user);
   }
 
-  @Patch(':id/status')
-  @ApiOperation({ summary: 'Modify the progression state of a specific owned task' })
-  @ApiOkResponse({ description: 'Task status updated successfully.' })
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update specific fields (title, description, or status) of an owned task' })
+  @ApiOkResponse({ description: 'Task updated successfully.' })
   @ApiNotFoundResponse({ description: 'Task ID does not exist or user does not own it.' })
-  @ApiOperation({ summary: 'Update the status of a specific task' })
-  updateStatus(@Param('id') id: string, @Body() updateTaskStatusDto: UpdateTaskStatusDto, @GetUser() user: User) {
-    return this.tasksService.updateStatus(id, updateTaskStatusDto, user);
-  }
-
-  @Patch(':id/description')
-  @ApiOperation({ summary: 'Modify the progression state of a specific owned task' })
-  @ApiOkResponse({ description: 'Task descriptipon updated successfully.' })
-  @ApiNotFoundResponse({ description: 'Task ID does not exist or user does not own it.' })
-  @ApiOperation({ summary: 'Update the description of a specific task' })
-  updateDescription(@Param('id') id: string, @Body() updateTaskDescriptionDto: UpdateTaskDescriptionDto, @GetUser() user: User) {
-    return this.tasksService.updateDescrption(id, updateTaskDescriptionDto, user);
+  update(
+    @Param('id') id: string,
+    @Body() updateTaskDto: UpdateTaskDto, 
+    @GetUser() user: User,
+  ) {
+    return this.tasksService.update(id, updateTaskDto, user);
   }
 
   @Delete(':id')
@@ -71,5 +64,14 @@ export class TasksController {
   @ApiNotFoundResponse({ description: 'Task not found' })
   generateAiSteps(@Param('id') id: string, @GetUser() user: User) {
     return this.tasksService.addAiSubSteps(id, user);
+  }
+
+  @Patch('/subtasks/:id/toggle')
+  @ApiOperation({ summary: 'Toggle the completion check status of a specific subtask' })
+  @ApiOkResponse({ description: 'Subtask execution state updated successfully' })
+  async toggleSubtaskCheck(
+    @Param('id') id: string,
+    @GetUser() user: User) {
+    return this.tasksService.toggleSubtask(id, user);
   }
 }

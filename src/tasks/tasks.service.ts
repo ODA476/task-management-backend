@@ -3,11 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { Task, TaskStatus } from './entities/task.entity';
-import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import { User } from 'src/auth/entities/auth.entity';
-import { UpdateTaskDescriptionDto } from './dto/update-task-description.dto';
 import { GetTaskFilterDto } from './dto/get-tasks-filter.dto';
 import { AiService } from 'src/ai/ai.service';
+import { UpdateTaskDto } from './dto/update-task.dto';
+import { Subtask } from './entities/subtask.entity';
 
 @Injectable()
 export class TasksService {
@@ -15,6 +15,8 @@ export class TasksService {
   constructor(
     @InjectRepository(Task)
     private readonly taskRepository: Repository<Task>,
+    @InjectRepository(Subtask)
+    private readonly subtaskRepository: Repository<Subtask>,
     private readonly aiService: AiService,
   ) {}
 
@@ -31,8 +33,42 @@ export class TasksService {
     const suggestedSteps = await this.aiService.generateTaskBreakdown(task.title, task.description);
 
     // 3. Update the entity field and save it to PostgreSQL
-    task.aiSubSteps = suggestedSteps;
+    await this.subtaskRepository.delete({ task: { id: task.id } });
+
+    // Transform string descriptions into structured entities bound to this task
+    const subtasks = suggestedSteps.map((title) => {
+      return this.subtaskRepository.create({
+        title,
+        isDone: false, // Explicit tracking state flag
+        task,
+      });
+    });
+
+    // Save subtasks to database and assign them to the task entity
+    task.subtasks = await this.subtaskRepository.save(subtasks);
     return await this.taskRepository.save(task);
+  }
+
+  async toggleSubtask(subtaskId: string, user: User): Promise<Task> {
+    // Find the subtask along with its parent task and the owner user to maintain strict isolation boundaries
+    const subtask = await this.subtaskRepository.findOne({
+      where: { id: subtaskId },
+      relations: {
+        task: {
+          user: true,
+        },
+      },
+    });
+
+    if (!subtask || subtask.task.user.id !== user.id) {
+      throw new NotFoundException(`Subtask with ID "${subtaskId}" not found.`);
+    }
+
+    // Toggle status flag cleanly
+    subtask.isDone = !subtask.isDone;
+    await this.subtaskRepository.save(subtask);
+
+    return await this.findOne(subtask.task.id, user);
   }
 
   // Write the create method
@@ -51,7 +87,7 @@ export class TasksService {
   }
 
   // Fetch all records from the task table
-  async findAll(filterDto: GetTaskFilterDto, user: User): Promise<{tasks: Task[], total: number}> {
+  async findAll(filterDto: GetTaskFilterDto, user: User) /*: Promise<Task[]>*/ {
     const { status, search, page = 1, limit = 10 } = filterDto;
 
     // 1. Create a query builder linked to the 'task' table alias
@@ -80,7 +116,17 @@ export class TasksService {
 
     // 5. Run the generated SQL query and grab the matching records
     const [tasks, total] = await query.getManyAndCount();
-    return { total, tasks };
+    // return tasks;
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      items: tasks,
+      total,
+      page,
+      limit,
+      totalPages,
+    };
   }
 
   // Fetch a single task by ID; throw an HTTP 404 if it does not exist
@@ -94,17 +140,15 @@ export class TasksService {
     return found;
   }
 
-  // Update the status of a specific task
-  async updateStatus(id: string, updateTaskStatusDto: UpdateTaskStatusDto, user: User): Promise<Task> {
-    const task = await this.findOne(id, user); // Reuses findOne logic to auto-throw 404 if invalid
-    task.status = updateTaskStatusDto.status;
-    return await this.taskRepository.save(task);
-  }
+  // Update a specific task
+  async update(id: string, updateTaskDto: UpdateTaskDto, user: User): Promise<Task> {
+    const task = await this.findOne(id, user);
 
-  // Update the description of a specific task
-  async updateDescrption(id: string, updateTaskDescriptionDto: UpdateTaskDescriptionDto, user: User): Promise<Task> {
-    const task = await this.findOne(id, user); // Reuses findOne logic to auto-throw 404 if invalid
-    task.description = updateTaskDescriptionDto.description;
+    // Only overwrites properties sent in the frontend body input
+    if (updateTaskDto.title !== undefined) task.title = updateTaskDto.title;
+    if (updateTaskDto.description !== undefined) task.description = updateTaskDto.description;
+    if (updateTaskDto.status !== undefined) task.status = updateTaskDto.status;
+
     return await this.taskRepository.save(task);
   }
 

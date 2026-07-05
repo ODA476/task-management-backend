@@ -1,13 +1,15 @@
-import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from './entities/auth.entity';
-import { AuthCredentialsDto } from './dto/auth-credentials.dto';
-import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { User } from './entities/auth.entity';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { AuthCredentialsSignInDto } from './dto/auth-credentials-signin.dto';
+import { AuthCredentialsSignUpDto } from './dto/auth-credentials-signup.dto';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class AuthService {
@@ -15,11 +17,12 @@ export class AuthService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
   ) {}
 
   // Registration flow
-  async signUp(authCredentialsDto: AuthCredentialsDto): Promise<void> {
-    const { email, password } = authCredentialsDto;
+  async signUp(authCredentialsDto: AuthCredentialsSignUpDto): Promise<void> {
+    const { email, password, firstName, lastName } = authCredentialsDto;
 
     // 1. Generate salt and hash the plaintext password
     const salt = await bcrypt.genSalt();
@@ -31,6 +34,8 @@ export class AuthService {
     const user = this.userRepository.create({
       email,
       password: hashedPassword,
+      firstName,
+      lastName,
       isConfirmed: false,
       confirmationToken,
     });
@@ -39,30 +44,21 @@ export class AuthService {
       await this.userRepository.save(user);
 
       // MOCK EMAIL DELIVERY: Log verification link to your terminal console
-      console.log('\n=== ✉️ EMAIL CONFIRMATION LINK ===');
-      console.log(`http://localhost:3000/auth/confirm?token=${confirmationToken}`);
-      console.log('===================================\n');
+      // console.log('\n=== ✉️ EMAIL CONFIRMATION LINK ===');
+      // console.log(`http://localhost:3000/auth/confirm?token=${confirmationToken}`);
+      // console.log('===================================\n');
 
-      // --- SEND REAL CONFIRMATION EMAIL ---
-      // const confirmUrl = `http://localhost:3000/auth/confirm?token=${confirmationToken}`;
-      /*try {
-        await this.mailerService.sendMail({
-          to: user.email,
-          subject: 'Welcome! Confirm Your Email Address',
-          html: `<h3>Welcome to Task Manager!</h3>
-               <p>Please click the link below to activate your account:</p>
-               <a href="${confirmUrl}">${confirmUrl}</a>`,
-        }).then(console.log, console.error);
-      } catch (error) {
-        console.log(error);
-      }*/
-      // await this.mailerService.sendMail({
-      //     to: user.email,
-      //     subject: 'Welcome! Confirm Your Email Address',
-      //     html: `<h3>Welcome to Task Manager!</h3>
-      //          <p>Please click the link below to activate your account:</p>
-      //          <a href="${confirmUrl}">${confirmUrl}</a>`,
-      //   }).then(console.log, console.error);
+      await this.mailService.sendMail(
+        email,
+        'Verify Your Email',
+        'verify-email', // verify-email.hbs
+        {
+          name: user.firstName,
+          verificationLink: `http://localhost:3000/auth/confirm?token=${confirmationToken}`,
+          expiresIn: '24 hours',
+          currentYear: new Date().getFullYear(),
+        },
+      );
     } catch (error) {
       // PostgreSQL error code '23505' stands for unique_violation (duplicate email)
       if (error.code === '23505') {
@@ -89,8 +85,8 @@ export class AuthService {
   }
 
   // Sign In
-  async signIn(authCredentialsDto: AuthCredentialsDto): Promise<{accessToken: string}> {
-    const {email, password} = authCredentialsDto;
+  async signIn(authCredentialsDto: AuthCredentialsSignInDto): Promise<{accessToken: string}> {
+    const { email, password } = authCredentialsDto;
 
     // Fill user by email
     const user = await this.userRepository.findOneBy({ email });
@@ -103,7 +99,7 @@ export class AuthService {
       }
 
       // Create the JWT Payload (do not put sensitive details like passwords here)
-      const payload = { email: user.email, sub: user.id};
+      const payload = { email: user.email, sub: user.id };
       // Generate the token string
       const accessToken = await this.jwtService.sign(payload);
       return { accessToken };
@@ -129,18 +125,20 @@ export class AuthService {
     await this.userRepository.save(user);
 
     // MOCK EMAIL DELIVERY: Log password reset link to your terminal console
-    console.log('\n=== 🔑 PASSWORD RESET LINK ===');
-    console.log(`http://localhost:3000/auth/reset-password?token=${resetToken}`);
-    console.log('================================\n');
-    //------------------------------------------
-    // const resetUrl = `http://localhost:3000/auth/reset-password?token=${resetToken}`;
-    // await this.mailerService.sendMail({
-    //   to: user.email,
-    //   subject: 'Password Reset Request',
-    //   html: `<h3>Password Reset</h3>
-    //          <p>You requested a password reset. Click the link below to establish new credentials (valid for 1 hour):</p>
-    //          <a href="${resetUrl}">${resetUrl}</a>`,
-    // });
+    // console.log('\n=== 🔑 PASSWORD RESET LINK ===');
+    // console.log(`http://localhost:3000/auth/reset-password?token=${resetToken}`);
+    // console.log('================================\n');
+
+    await this.mailService.sendMail(
+      email,
+      'Reset password',
+      'reset-password', // reset-password.hbs
+      {
+        name: user.firstName,
+        resetLink: `http://localhost:3000/auth/reset-password?token=${resetToken}`,
+        expiresIn: '60 minutes',
+      },
+    );
   }
 
   // RESET PASSWORD EXECUTION
@@ -177,7 +175,7 @@ export class AuthService {
     return await this.userRepository.findOneBy({ email });
   }
 
-  async validateGoogleUser(googleUser: AuthCredentialsDto): Promise<any> {
+  async validateGoogleUser(googleUser: AuthCredentialsSignInDto): Promise<any> {
     const { email, password } = googleUser;
     const user = await this.findByEmail(email);
 

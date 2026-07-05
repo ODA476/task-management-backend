@@ -1,6 +1,6 @@
 import { Exclude } from "class-transformer";
 import { Task } from "src/tasks/entities/task.entity";
-import { Entity, PrimaryGeneratedColumn, Column, Unique, OneToMany } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, Unique, OneToMany, CreateDateColumn, UpdateDateColumn } from "typeorm";
 
 @Entity({ name: 'users' })
 @Unique(['email'])
@@ -10,6 +10,12 @@ export class User {
 
   @Column()
   email: string;
+
+  @Column()
+  firstName: string;
+
+  @Column()
+  lastName: string;
 
   @Column()
   @Exclude({ toPlainOnly: true }) // Hides this field completely when converting to JSON
@@ -29,6 +35,12 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   @Exclude({ toPlainOnly: true })
   resetPasswordExpires: Date | null;
+
+  @CreateDateColumn({ type: 'timestamp' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamp' })
+  updatedAt: Date;
 
   @OneToMany(() => Task, (task) => task.user, { eager: false })
   tasks: Task[];

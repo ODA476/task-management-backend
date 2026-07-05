@@ -10,6 +10,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import googleOauthConfig from './config/google-oauth.config';
 import { GoogleStrategy } from './strategies/google.strategy';
+import { MailModule } from 'src/mail/mail.module';
 // import { MailtrapTransport } from 'mailtrap';
 
 @Module({
@@ -64,6 +65,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
     //   }),
     //   inject: [ConfigService],
     // }),
+    MailModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, GoogleStrategy],

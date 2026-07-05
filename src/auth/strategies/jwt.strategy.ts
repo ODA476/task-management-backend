@@ -1,10 +1,11 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Strategy } from 'passport-jwt';
 import { Repository } from 'typeorm';
 import { User } from '../entities/auth.entity';
 import { ConfigService } from '@nestjs/config';
+import * as Express from 'express';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -19,8 +20,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     super({
-      // Tell Passport how to extract the JWT from the request headers
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // // Tell Passport how to extract the JWT from the request headers
+      // jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // EXTRACT TOKEN FROM COOKIES
+      jwtFromRequest: (req: Express.Request) => {
+        if (req && req.cookies) {
+          return req.cookies['access_token'] || null;
+        }
+        return null;
+      },
+      ignoreExpiration: false,
       // Must match the secret key used in AuthModule
       secretOrKey: jwtSecret,
     });
